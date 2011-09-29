@@ -17,8 +17,8 @@ Jeweler::Tasks.new do |gem|
   gem.name = "rack-cas-client"
   gem.homepage = "http://github.com/jriga/rack-cas-client"
   gem.license = "MIT"
-  gem.summary = %Q{TODO: one-line summary of your gem}
-  gem.description = %Q{TODO: longer description of your gem}
+  gem.summary = %Q{Rack middleware for authentication with CAS}
+  gem.description = %Q{This is a basic CAS client rack middleware at the moment}
   gem.email = "jriga@zemis.co.uk"
   gem.authors = ["Jerome Riga"]
   # dependencies defined in Gemfile
