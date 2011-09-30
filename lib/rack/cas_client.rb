@@ -13,29 +13,64 @@ end
 
 module Rack
   module Cas
-    class Client < Struct.new :app, :options
-      def call(env)
-        return logout if logout_request?(env)
-        
-        # skip if requesting assets 
-        #TODO: return app.call(env) if assets_request?
 
-        if authenticated?
-          ticket = request.params.delete('ticket')
-          app.call(env)
-        else
-          if request.params[:format] == "xml"
-            if vr
-              return [401, {'Content-type' => 'application/xml'}, ["<errors><error>#{vr.failure_message}</error></errors>"]]
-            else
-              return [401, {'Content-type' => 'text/html'}, [vr.failure_message]]
-            end
-          else
-            redirect_to_cas_for_authentication
-          end
+    module SessionStore
+      module FileSystem
+        # Creates a file in tmp/sessions linking a SessionTicket
+        # with the local Rails session id. The file is named
+        # cas_sess.<session ticket> and its text contents is the corresponding 
+        # Rails session id.
+        # Returns the filename of the lookup file created.
+        def store_service_session_lookup(st, sid)
+          st = st.ticket if st.kind_of? CASClient::ServiceTicket
+          f = ::File.new(filename_of_service_session_lookup(st), 'w')
+          f.write(sid)
+          f.close
+          return f.path
         end
         
+        # Returns the local Rails session ID corresponding to the given
+        # ServiceTicket. This is done by reading the contents of the
+        # cas_sess.<session ticket> file created in a prior call to 
+        # #store_service_session_lookup.
+        def read_service_session_lookup(st)
+          st = st.ticket if st.kind_of? CASClient::ServiceTicket
+          ssl_filename = filename_of_service_session_lookup(st)
+          return ::File.exists?(ssl_filename) && IO.read(ssl_filename)
+        end
+        
+        # Removes a stored relationship between a ServiceTicket and a local
+        # Rails session id. This should be called when the session is being
+        # closed.
+        #
+        # See #store_service_session_lookup.
+        def delete_service_session_lookup(st)
+          st = st.ticket if st.kind_of? CASClient::ServiceTicket
+          ssl_filename = filename_of_service_session_lookup(st)
+          ::File.delete(ssl_filename) if File.exists?(ssl_filename)
+        end
+        
+        # Returns the path and filename of the service session lookup file.
+        def filename_of_service_session_lookup(st)
+          st = st.ticket if st.kind_of? CASClient::ServiceTicket
+          return "#{config[:session_dir]}/sessions/cas_sess.#{st}"
+        end
       end
+    end
+    
+    
+    class Client < Struct.new :app, :options
+      include SessionStore::FileSystem
+      
+      def call(env)
+        return app.call(env)         if assets_request?(env)
+        return logout                if logout_request?(env)
+        return single_sign_out       if sso_request?(env)
+        return app.call(env)         if authenticated?(env)
+        return unauthorized_request  if xml_request?(env)
+          
+        redirect_to_cas_for_authentication
+      end  
 
       protected
       def client
@@ -67,26 +102,28 @@ module Rack
         @config
       end
 
+      def assets_request?(env)
+        r= Rack::Request.new(env)
+        if r.path =~ /.*\.(js|css|png|jpg|jpeg|gif)$/i
+          log.debug("Skipping assets")
+          return true
+        else
+          return false
+        end
+      end
+
       def logout_request?(env)
         @request = Rack::Request.new(env)
         request.session['cas'] ||= {}
         request.path == '/logout' && request.delete?
       end
 
-      # Clears the given controller's local Rails session, does some local 
-      # CAS cleanup, and redirects to the CAS logout page. Additionally, the
-      # <tt>request.referer</tt> value from the <tt>controller</tt> instance 
-      # is passed to the CAS server as a 'destination' parameter. This 
-      # allows RubyCAS server to provide a follow-up login page allowing
-      # the user to log back in to the service they just logged out from 
-      # using a different username and password. Other CAS server 
-      # implemenations may use this 'destination' parameter in different 
-      # ways. 
-      # If given, the optional <tt>service</tt> URL overrides 
-      # <tt>request.referer</tt>.
       def logout(service = nil)
+        log.debug("Logging out!!")
         referer = service || request.referer
         st = last_service_ticket
+        log.debug("looking up st for deletion #{st.inspect}")
+        # TODO: service ticket all nil => cannot log out!!!!
         delete_service_session_lookup(st) if st
 
         response  = Rack::Response.new(request.env)
@@ -95,18 +132,36 @@ module Rack
         response.finish
       end
 
-      def authenticated?
-        #if @@fake_user
-        #  controller.session[client.username_session_key] = @@fake_user
-        #  controller.session[:casfilteruser] = @@fake_user
-        #  controller.session[client.extra_attributes_session_key] = @@fake_extra_attributes
-        #  return true
-        #end
-        #if single_sign_out(controller)
-        #  controller.send(:render, :text => "CAS Single-Sign-Out request intercepted.")
-        #  return false 
-        #end
-        
+      def sso_request?(env)
+        request.post? && request.params['logoutRequest'] && request.params['logoutRequest'] =~ %r{^<samlp:LogoutRequest.*?<samlp:SessionIndex>(.*)</samlp:SessionIndex>}m
+      end
+
+      def single_sign_out
+        log.debug("SINGLE SIGN OUT")
+        # TODO: service ticket all nil => cannot log out!!!!
+        done = true
+        if done
+          [200,{},[]]
+        else
+          [400,{},[]]
+        end
+      end
+
+      def unauthorized_request
+        log.debug("Unauthorized request")
+        if vr
+          [401, {'Content-type' => 'application/xml'}, ["<errors><error>#{vr.failure_message}</error></errors>"]]
+        else
+          [401, {'Content-type' => 'text/html'}, [vr.failure_message]]
+        end
+      end
+
+      def xml_request?(env)
+        Rack::Request.new(env).params[:format] == "xml"
+      end
+      
+
+      def authenticated?(env)
         case check_service_ticket
         when :identical
           log.warn("Re-using previously validated ticket since the ticket id and service are the same.")
@@ -137,7 +192,8 @@ module Rack
             log.debug("last service ticket #{last_service_ticket.inspect}")
             
             work_for_vr_pgt_iou(vr) if vr.pgt_iou
-            
+
+            log.debug("authenticated? : true")
             return true
           else
             log.warn("Ticket #{@current_service_ticket.ticket.inspect} failed validation -- #{vr.failure_code}: #{vr.failure_message}")
@@ -191,6 +247,7 @@ module Rack
       end
 
       def work_for_vr_pgt_iou(vr)
+        log.debug("CALLING work_for_vr_pgt_iou with vr #{vr.inspect}")
         unless request.session[:cas_pgt] && request.session[:cas_pgt].ticket && request.session[:cas_pgt].iou == vr.pgt_iou
           log.info("Receipt has a proxy-granting ticket IOU. Attempting to retrieve the proxy-granting ticket...")
           pgt = client.retrieve_proxy_granting_ticket(vr.pgt_iou)
@@ -211,9 +268,7 @@ module Rack
 
       def check_service_ticket
         st, last_st = [service_ticket, last_service_ticket]
-        log.debug "check_service_ticket"
-        log.debug "st: #{st.inspect}"
-        log.debug "last_st: #{last_st.inspect}"
+
         return :identical if st && last_st && last_st.ticket == st.ticket && last_st.service == st.service
         return :different if last_st && !config[:authenticate_on_every_request] && client_username_session_key
       end
@@ -347,48 +402,7 @@ module Rack
         log.debug("Generated login url: #{url}")
         return url
       end
-
-
-      # Creates a file in tmp/sessions linking a SessionTicket
-      # with the local Rails session id. The file is named
-      # cas_sess.<session ticket> and its text contents is the corresponding 
-      # Rails session id.
-      # Returns the filename of the lookup file created.
-      def store_service_session_lookup(st, sid)
-        st = st.ticket if st.kind_of? CASClient::ServiceTicket
-        f = ::File.new(filename_of_service_session_lookup(st), 'w')
-        f.write(sid)
-        f.close
-        return f.path
-      end
-
-      # Returns the local Rails session ID corresponding to the given
-      # ServiceTicket. This is done by reading the contents of the
-      # cas_sess.<session ticket> file created in a prior call to 
-      # #store_service_session_lookup.
-      def read_service_session_lookup(st)
-        st = st.ticket if st.kind_of? CASClient::ServiceTicket
-        ssl_filename = filename_of_service_session_lookup(st)
-        return ::File.exists?(ssl_filename) && IO.read(ssl_filename)
-      end
-      
-      # Removes a stored relationship between a ServiceTicket and a local
-      # Rails session id. This should be called when the session is being
-      # closed.
-      #
-      # See #store_service_session_lookup.
-      def delete_service_session_lookup(st)
-        st = st.ticket if st.kind_of? CASClient::ServiceTicket
-        ssl_filename = filename_of_service_session_lookup(st)
-        ::File.delete(ssl_filename) if File.exists?(ssl_filename)
-      end
-
-      # Returns the path and filename of the service session lookup file.
-      def filename_of_service_session_lookup(st)
-        st = st.ticket if st.kind_of? CASClient::ServiceTicket
-        return "#{config[:session_dir]}/sessions/cas_sess.#{st}"
-      end
-
+     
     end
 
 
