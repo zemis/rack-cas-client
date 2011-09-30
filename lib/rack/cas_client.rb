@@ -15,9 +15,13 @@ module Rack
   module Cas
     class Client < Struct.new :app, :options
       def call(env)
-        request(env)
-        request.session['cas'] = {}
+        return logout if logout_request?(env)
+        
+        # skip if requesting assets 
+        #TODO: return app.call(env) if assets_request?
+
         if authenticated?
+          ticket = request.params.delete('ticket')
           app.call(env)
         else
           if request.params[:format] == "xml"
@@ -30,6 +34,7 @@ module Rack
             redirect_to_cas_for_authentication
           end
         end
+        
       end
 
       protected
@@ -60,6 +65,34 @@ module Rack
         }.merge(options)
         raise "You must provide the location " if @config[:enable_single_sign_out] && @config[:session_dir].nil?
         @config
+      end
+
+      def logout_request?(env)
+        @request = Rack::Request.new(env)
+        request.session['cas'] ||= {}
+        request.path == '/logout' && request.delete?
+      end
+
+      # Clears the given controller's local Rails session, does some local 
+      # CAS cleanup, and redirects to the CAS logout page. Additionally, the
+      # <tt>request.referer</tt> value from the <tt>controller</tt> instance 
+      # is passed to the CAS server as a 'destination' parameter. This 
+      # allows RubyCAS server to provide a follow-up login page allowing
+      # the user to log back in to the service they just logged out from 
+      # using a different username and password. Other CAS server 
+      # implemenations may use this 'destination' parameter in different 
+      # ways. 
+      # If given, the optional <tt>service</tt> URL overrides 
+      # <tt>request.referer</tt>.
+      def logout(service = nil)
+        referer = service || request.referer
+        st = last_service_ticket
+        delete_service_session_lookup(st) if st
+
+        response  = Rack::Response.new(request.env)
+        response.delete_cookie(request.session_options[:key],{})
+        response.redirect(client.logout_url(referer))
+        response.finish
       end
 
       def authenticated?
@@ -186,9 +219,10 @@ module Rack
       end
 
       def service_ticket
+        log.debug("calling service_ticket: #{@service_ticket.inspect}")
         return @service_ticket if @service_ticket
 
-        ticket = request.params.delete('ticket')
+        ticket = request.params['ticket']
         return unless ticket
 
         log.debug("Request contains ticket #{ticket.inspect}.")
@@ -250,8 +284,8 @@ module Rack
         @vr = value
       end
       
-      def request(env=nil)
-        @request ||= Rack::Request.new(env)
+      def request
+        @request 
       end
 
       def new_session?
@@ -274,7 +308,6 @@ module Rack
         log.info("parmas #{request.params.inspect}")
         @service_url
       end
-
 
 
       def redirect_to_cas_for_authentication
@@ -360,6 +393,7 @@ module Rack
 
 
     module ClientHelpers
+      
       module Rails
         # TODO
       end
