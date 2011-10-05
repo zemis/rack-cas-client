@@ -106,7 +106,7 @@ module Rack
 
       def logout_request?(env)
         request = Rack::Request.new(env)
-        request.path == '/logout'# && request.delete?
+        request.path == '/logout' && request.delete?
       end
 
       def logout(env)

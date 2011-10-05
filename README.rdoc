@@ -1,6 +1,45 @@
 = rack-cas-client
+  This middleware will redirect all unauthenticated requests to the specified cas server. After a successful authentication the cas server will redirect the user back to your application with a service ticket. This ticket is used to check the validity of the user's session on subsequent calls.
 
-Description goes here.
+  By default the user's login username is store in the session (session['cas']['user']). If your cas server is configured to send extra attributes (http://code.google.com/p/rubycas-server/wiki/HowToSendExtraUserAttributes), then they are accessible at (session['cas']['user_extra']).
+
+  To log user out, send a DELETE to /logout and the middleware will delete the user's session.
+
+  This middleware was inspired by the 'rubycas-client-rails' gem 
+
+== Basic Usage
+ require 'rack/cas_client.rb'
+
+ app = Rack::Builder.new {
+   use Rack::Session::Cookie
+   use Rack::Cas::Client, :cas_base_url => 'https://cas.myserver:443/', :session_dir => './tmp/sessions'
+   run lambda {|env|
+     request = Rack::Request.new(env)
+     [200, {'Content-Type' => 'text/html'}, ['<p>You are in '+"#{request.session['cas']['user']}"+' </p><p>Extra '+ "#{request.session['cas']['user_extra'].inspect}" +'</p><form action="/logout" method="post"><input type="hidden" name="_method" value="delete" /><input type="submit" value="out"/></form> ']]
+   }
+ }
+
+run app
+
+== Rails
+ In config/application.rb or in an environment file
+
+ config.middleware.insert_after ActionDispatch::Session::CookieStore,  Rack::Cas::Client, :cas_base_url => 'https://cas.server:443/', :session_dir => './tmp/sessions'
+
+== Sinatra
+ require 'sinatra/base'
+ 
+ class App < Sinatra::Base
+   use Rack::Session::Cookie
+   use Rack::Cas::Client, :cas_base_url => 'https://cas.myserver:443/', :session_dir => './tmp/sessions'
+ end
+
+ run App.new
+
+
+== Todo
+ * Add tests
+ * cleanup code
 
 == Contributing to rack-cas-client
  

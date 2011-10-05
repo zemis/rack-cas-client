@@ -15,10 +15,10 @@ require 'jeweler'
 Jeweler::Tasks.new do |gem|
   # gem is a Gem::Specification... see http://docs.rubygems.org/read/chapter/20 for more options
   gem.name = "rack-cas-client"
-  gem.homepage = "http://github.com/jriga/rack-cas-client"
+  gem.homepage = "http://github.com/zemis/rack-cas-client"
   gem.license = "MIT"
-  gem.summary = %Q{Rack middleware for authentication with CAS}
-  gem.description = %Q{This is a basic CAS client rack middleware at the moment}
+  gem.summary = %Q{Rack middleware for authentication with CAS server}
+  gem.description = %Q{Rack middleware that handles user authentication against a cas server}
   gem.email = "jriga@zemis.co.uk"
   gem.authors = ["Jerome Riga"]
   # dependencies defined in Gemfile

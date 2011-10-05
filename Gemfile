@@ -1,5 +1,6 @@
 source "http://rubygems.org"
-gem 'rubycas-client'
+gem 'rubycas-client', "~> 2.2.1"
+gem 'activesupport', '>= 2'
 
 # Include everything needed to run rake, tests, features, etc.
 group :development do

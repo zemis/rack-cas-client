@@ -27,8 +27,9 @@ PLATFORMS
   ruby
 
 DEPENDENCIES
+  activesupport (>= 2)
   bundler (~> 1.0.0)
   jeweler (~> 1.6.4)
   rcov
   rspec (~> 2.3.0)
-  rubycas-client
+  rubycas-client (~> 2.2.1)
