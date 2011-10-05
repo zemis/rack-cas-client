@@ -2,14 +2,10 @@ require 'logger'
 require 'uri'
 require 'casclient'
 
-# /Users/jriga/.rvm/gems/ruby-1.9.2-p290/gems/rubycas-client-2.2.1/lib/casclient/responses.rb:40
-# uses a rails methods
-# need to add it manially
-class String
-  def blank?
-    self.nil? || self.empty?
-  end
-end
+# TODO: remove dependency on activesuppor/core_ext
+# rubycas-client-2.2.1/lib/casclient/responses.rb:40 => String.blank?
+# rubycas-client-2.2.1/lib/casclient/responses.rb:68 => Hash.from_xml(xml)
+require 'active_support/core_ext'
 
 module Rack
   module Cas
@@ -47,13 +43,13 @@ module Rack
         def delete_service_session_lookup(st)
           st = st.ticket if st.kind_of? CASClient::ServiceTicket
           ssl_filename = filename_of_service_session_lookup(st)
-          ::File.delete(ssl_filename) if File.exists?(ssl_filename)
+          ::File.delete(ssl_filename) if ::File.exists?(ssl_filename)
         end
         
         # Returns the path and filename of the service session lookup file.
         def filename_of_service_session_lookup(st)
           st = st.ticket if st.kind_of? CASClient::ServiceTicket
-          return "#{config[:session_dir]}/sessions/cas_sess.#{st}"
+          return "#{config[:session_dir]}/cas_sess.#{st}"
         end
       end
     end
@@ -61,15 +57,17 @@ module Rack
     
     class Client < Struct.new :app, :options
       include SessionStore::FileSystem
+      attr_reader :mem
       
       def call(env)
+        @mem = Rack::Request.new(env).session['cas'] || {}
         return app.call(env)         if assets_request?(env)
-        return logout                if logout_request?(env)
-        return single_sign_out       if sso_request?(env)
-        return app.call(env)         if authenticated?(env)
+        return logout(env)           if logout_request?(env)
+        return single_sign_out(env)  if sso_request?(env)
+        return valid_session(env)    if authenticated?(env)
         return unauthorized_request  if xml_request?(env)
           
-        redirect_to_cas_for_authentication
+        redirect_to_cas_for_authentication(env)
       end  
 
       protected
@@ -103,47 +101,49 @@ module Rack
       end
 
       def assets_request?(env)
-        r= Rack::Request.new(env)
-        if r.path =~ /.*\.(js|css|png|jpg|jpeg|gif)$/i
-          log.debug("Skipping assets")
-          return true
-        else
-          return false
-        end
+        Rack::Request.new(env).path =~ /.*\.(js|css|png|jpg|jpeg|gif|ico)$/i
       end
 
       def logout_request?(env)
-        @request = Rack::Request.new(env)
-        request.session['cas'] ||= {}
-        request.path == '/logout' && request.delete?
+        request = Rack::Request.new(env)
+        request.path == '/logout'# && request.delete?
       end
 
-      def logout(service = nil)
+      def logout(env)
         log.debug("Logging out!!")
-        referer = service || request.referer
+        request = Rack::Request.new(env)
+        referer = request.referer
         st = last_service_ticket
         log.debug("looking up st for deletion #{st.inspect}")
-        # TODO: service ticket all nil => cannot log out!!!!
         delete_service_session_lookup(st) if st
 
+        request.session.delete('cas')
         response  = Rack::Response.new(request.env)
-        response.delete_cookie(request.session_options[:key],{})
         response.redirect(client.logout_url(referer))
         response.finish
       end
 
       def sso_request?(env)
-        request.post? && request.params['logoutRequest'] && request.params['logoutRequest'] =~ %r{^<samlp:LogoutRequest.*?<samlp:SessionIndex>(.*)</samlp:SessionIndex>}m
+        request = Rack::Request.new(env)
+        request.post? && request.params['logoutRequest']
       end
 
-      def single_sign_out
+      def single_sign_out(env)
         log.debug("SINGLE SIGN OUT")
-        # TODO: service ticket all nil => cannot log out!!!!
-        done = true
-        if done
-          [200,{},[]]
+        request = Rack::Request.new(env)
+        logoutRequest = URI.unescape(request.params['logoutRequest'])
+        
+        md = logoutRequest.match( %r{^<samlp:LogoutRequest.*?<samlp:SessionIndex>(.*)</samlp:SessionIndex>}m )
+        if md && md[1]
+          ticket = md[1]
+          done = delete_service_session_lookup(ticket) 
+          if done
+            [200,{'Content-type' => 'text/plain'},['session deleted']]
+          else
+            [404,{'Content-type' => 'text/plain'},['session not found']]
+          end
         else
-          [400,{},[]]
+          [400,{'Content-type' => 'text/plain'},['missing service ticket in request']]
         end
       end
 
@@ -162,7 +162,7 @@ module Rack
       
 
       def authenticated?(env)
-        case check_service_ticket
+        case check_service_ticket(env)
         when :identical
           log.warn("Re-using previously validated ticket since the ticket id and service are the same.")
           @new_session = false
@@ -175,7 +175,7 @@ module Rack
           
         else
           log.debug("set current_service_ticket to service_ticket")
-          @current_service_ticket = service_ticket
+          @current_service_ticket = service_ticket(env)
         end
 
         if @current_service_ticket
@@ -183,17 +183,14 @@ module Rack
           vr = @current_service_ticket.response
 
           if @current_service_ticket.is_valid?
-            work_for_new_session(vr) if new_session?
-            
             # Store the ticket in the session to avoid re-validating the same service
             # ticket with the CAS server.
             last_service_ticket = @current_service_ticket
 
-            log.debug("last service ticket #{last_service_ticket.inspect}")
-            
-            work_for_vr_pgt_iou(vr) if vr.pgt_iou
+            work_for_new_session(vr,env) if new_session?
+            work_for_vr_pgt_iou(vr,env) if vr.pgt_iou
 
-            log.debug("authenticated? : true")
+
             return true
           else
             log.warn("Ticket #{@current_service_ticket.ticket.inspect} failed validation -- #{vr.failure_code}: #{vr.failure_message}")
@@ -228,9 +225,25 @@ module Rack
         return false
       end
 
+      def valid_session(env)
+        request = Rack::Request.new(env)
 
-      def work_for_new_session(vr)
+        session = request.session
+        session['cas'] = {'last_valid_ticket' => @current_service_ticket, 'user' => @user, 'user_extra' => @user_extra }
+        
+        status, headers, body = app.call(env)
+        
+        response = Rack::Response.new(body, status, headers)
+        response.delete_cookie(request.session_options[:key], {})
+        response.set_cookie(request.session_options[:key], session)
+        response.finish
+      end
+
+
+      def work_for_new_session(vr,env)
         log.info("Ticket #{@current_service_ticket.ticket.inspect} for service #{@current_service_ticket.service.inspect} belonging to user #{vr.user.inspect} is VALID.")
+        @user = vr.user.dup
+        @user_extra = vr.extra_attributes.dup
         client_username_session_key = vr.user.dup
         client_extra_attributes_session_key = vr.extra_attributes if vr.extra_attributes
         
@@ -240,14 +253,18 @@ module Rack
         casfilteruser = vr.user
         
         if config[:enable_single_sign_out]
-          f = store_service_session_lookup(@current_service_ticket, request.session['session_id'])
-          log.debug("Wrote service session lookup file to #{f.inspect} with session id #{request.session.inspect}.")
+          puts self.inspect
+          session = Rack::Request.new(env).session
+          session['cas'] = {'last_valid_ticket' => @current_service_ticket}
+          f = store_service_session_lookup(@current_service_ticket, session)
+          log.debug("Wrote service session lookup file to #{f.inspect} with session id #{mem.inspect}.")
         end
         
       end
 
-      def work_for_vr_pgt_iou(vr)
+      def work_for_vr_pgt_iou(vr,env)
         log.debug("CALLING work_for_vr_pgt_iou with vr #{vr.inspect}")
+        request = Rack::Request.new(env)
         unless request.session[:cas_pgt] && request.session[:cas_pgt].ticket && request.session[:cas_pgt].iou == vr.pgt_iou
           log.info("Receipt has a proxy-granting ticket IOU. Attempting to retrieve the proxy-granting ticket...")
           pgt = client.retrieve_proxy_granting_ticket(vr.pgt_iou)
@@ -266,69 +283,67 @@ module Rack
         
       end
 
-      def check_service_ticket
-        st, last_st = [service_ticket, last_service_ticket]
+      def check_service_ticket(env)
+        st, last_st = [service_ticket(env), last_service_ticket]
 
         return :identical if st && last_st && last_st.ticket == st.ticket && last_st.service == st.service
         return :different if last_st && !config[:authenticate_on_every_request] && client_username_session_key
       end
 
-      def service_ticket
-        log.debug("calling service_ticket: #{@service_ticket.inspect}")
+      def service_ticket(env)
+        request = Rack::Request.new(env)
         return @service_ticket if @service_ticket
 
         ticket = request.params['ticket']
         return unless ticket
 
-        log.debug("Request contains ticket #{ticket.inspect}.")
-
         @service_ticket = if ticket =~ /^PT-/
-          CASClient::ProxyTicket.new(ticket, service_url, request.params.delete('renew'))
+          CASClient::ProxyTicket.new(ticket, service_url(env), request.params.delete('renew'))
         else
-          CASClient::ServiceTicket.new(ticket, service_url, request.params.delete('renew'))
+          CASClient::ServiceTicket.new(ticket, service_url(env), request.params.delete('renew'))
         end
       end
 
       def last_service_ticket
-        request.session['cas']['last_valid_ticket']
+        @mem['last_valid_ticket']
       end
       def last_service_ticket=(value)
-        request.session['cas']['last_valid_ticket'] = value
+        @mem['last_valid_ticket'] = value
       end
 
       def client_username_session_key
-        request.session['cas']['username_session_key']
+        @mem['user']
       end
       def client_username_session_key=(value)
-        request.session['cas']['username_session_key'] = value
+        @mem['user'] = value
       end
 
       def client_extra_attributes_session_key
-        request.session['cas']['extra_attributes_session_key']
+        @mem['user_extra']
       end
       def client_extra_attributes_session_key=(value)
-        request.session['cas']['extra_attributes_session_key'] = value
+        @mem['user_extra'] = value
       end
       def casfilteruser=(value)
-        request.session['cas']['filteruser'] = value
+        @mem['filteruser'] = value
       end
       def gateway=(value)
-        request.session['cas']['sent_to_gateway'] = value
+        @mem['sent_to_gateway'] = value
       end
       def gateway
-        request.session['cas']['sent_to_gateway']
+        @mem['sent_to_gateway']
       end
       def previous_redirect_to_cas
-        request.session['cas']['previous_redirect']
+        @mem['previous_redirect']
       end
       def previous_redirect_to_cas=(value)
-        request.session['cas']['previous_redirect'] = value
+        @mem['cas']['previous_redirect'] = value
       end
       def validation_retry
-        request.session['cas']['validation_retry'] || 0
+        @mem['validation_retry'] || 0
       end
       def validation_retry=(value)
-        request.session['cas']['validation_retry'] = value
+        @mem['validation_retry'] = value
       end
       
       def vr
@@ -338,35 +353,31 @@ module Rack
       def vr=(value)
         @vr = value
       end
-      
-      def request
-        @request 
-      end
-
+   
       def new_session?
         @new_session ||= true
       end
 
-      def service_url
+      def service_url(env)
         return @service_url if @service_url
         
         if config[:service_url]
           log.debug("Using explicitly set service url: #{config[:service_url]}")
           return @service_url = config[:service_url]
         end
+        request = Rack::Request.new(env)
 
         params = request.params.dup
         params.delete(:ticket)
         url = URI.const_get(request.scheme.upcase).build(:host => request.host, :port => request.port, :path => request.path, :query => request.query_string)
         @service_url = url.to_s
         log.debug("Guessed service url: #{@service_url}")
-        log.info("parmas #{request.params.inspect}")
         @service_url
       end
 
 
-      def redirect_to_cas_for_authentication
-        redirect_url = login_url
+      def redirect_to_cas_for_authentication(env)
+        redirect_url = login_url(env)
         
         if config[:use_gatewaying]
           gateway = true
@@ -389,16 +400,18 @@ module Rack
         end
         previous_redirect_to_cas = Time.now
         
-        log.debug("Redirecting to #{redirect_url.inspect}")
-        return [302, {'Location' => redirect_url, 'Content-Type' => 'text/plain'}, ["redirect to #{redirect_url}"]]
+        request  = Rack::Request.new(env)
+        response = Rack::Response.new(["redirect to #{redirect_url}"],302, {'Location' => redirect_url, 'Content-Type' => 'text/plain'})
+
+        return response.finish
       end
 
 
       # Returns the login URL for the current controller. 
       # Useful when you want to provide a "Login" link in a GatewayFilter'ed
       # action. 
-      def login_url
-        url = client.add_service_to_login_url(service_url)
+      def login_url(env)
+        url = client.add_service_to_login_url(service_url(env))
         log.debug("Generated login url: #{url}")
         return url
       end
