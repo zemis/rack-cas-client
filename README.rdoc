@@ -8,7 +8,7 @@
   This middleware was inspired by the 'rubycas-client-rails' gem 
 
 == Basic Usage
- require 'rack/cas_client.rb'
+ require 'rack/cas_client'
 
  app = Rack::Builder.new {
    use Rack::Session::Cookie

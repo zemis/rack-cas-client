@@ -253,7 +253,6 @@ module Rack
         casfilteruser = vr.user
         
         if config[:enable_single_sign_out]
-          puts self.inspect
           session = Rack::Request.new(env).session
           session['cas'] = {'last_valid_ticket' => @current_service_ticket}
           f = store_service_session_lookup(@current_service_ticket, session)
