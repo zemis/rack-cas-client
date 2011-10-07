@@ -60,11 +60,11 @@ module Rack
       attr_reader :mem
       
       def call(env)
-        return app.call(env)            if assets_request?(env)
-        return logout(*logout_options)  if logout_options = logout_request?(env)
-        return single_sign_out(request) if request = sso_request?(env)
-        return valid_session(*valid_session_options)  if valid_session_options = authenticated?(env)
-        return unauthorized_request     if xml_request?(env)
+        if assets_request?(env)                         return app.call(env)
+        if logout_options = logout_request?(env)        return logout(*logout_options)  
+        if request = sso_request?(env)                  return single_sign_out(request) 
+        if valid_session_options = authenticated?(env)  return valid_session(*valid_session_options)  
+        if xml_request?(env)                            return unauthorized_request     
           
         redirect_to_cas_for_authentication(env)
       end  
@@ -194,15 +194,9 @@ module Rack
           vr = current_service_ticket.response
 
           if current_service_ticket.is_valid?
-            # Store the ticket in the session to avoid re-validating the same service ticket with the CAS server.
-            last_service_ticket = current_service_ticket
-            user = vr.user.dup
-            user_extra = vr.extra_attributes.dup
-
-            work_for_new_session(env,current_service_ticket,vr) if new_session
             work_for_vr_pgt_iou(vr,env) if vr.pgt_iou
 
-            return [env, request, new_session, current_service_ticket, user, user_extra]
+            return [env, request, new_session, current_service_ticket]
           else
             
             log.warn("Ticket #{current_service_ticket.ticket.inspect} failed validation -- #{vr.failure_code}: #{vr.failure_message}")
@@ -237,40 +231,33 @@ module Rack
         return false
       end
 
-      def valid_session(env, request, new_session, current_service_ticket, user, user_extra)
+      def valid_session(env, request, new_session, current_service_ticket)
         status, headers, body = app.call(env)
         
         response = Rack::Response.new(body, status, headers)
+        
         # only modify the session when it's a new_session
         if new_session
+          cas_resp = current_service_ticket.response
+          log.info("Ticket #{current_service_ticket.ticket.inspect} for service #{current_service_ticket.service.inspect} belonging to user #{cas_resp.user.inspect} is VALID.")
+          
           session = request.session
-          session['cas'] = {'last_valid_ticket' => current_service_ticket, 'user' => user, 'user_extra' => user_extra }
+          session['cas'] = {'last_valid_ticket' => current_service_ticket, 'user' => cas_resp.user, 'user_extra' => cas_resp.extra_attributes.dup }
+          
           response.delete_cookie(request.session_options[:key], {})
           response.set_cookie(request.session_options[:key], session)
+
+          # RubyCAS-Client 1.x used :casfilteruser as it's username session key,
+          # so we need to set this here to ensure compatibility with configurations
+          # built around the old client.
+          casfilteruser = cas_resp.user
+
+          if config[:enable_single_sign_out]
+            f = store_service_session_lookup(current_service_ticket, session)
+            log.debug("Wrote service session lookup file to #{f.inspect} with session id #{session.inspect}.")
+          end
         end
         response.finish
-      end
-
-
-      def work_for_new_session(env, current_service_ticket, vr)
-        log.info("Ticket #{current_service_ticket.ticket.inspect} for service #{current_service_ticket.service.inspect} belonging to user #{vr.user.inspect} is VALID.")
-        user = vr.user.dup
-        user_extra = vr.extra_attributes.dup
-        client_username_session_key = vr.user.dup
-        client_extra_attributes_session_key = vr.extra_attributes if vr.extra_attributes
-        
-        # RubyCAS-Client 1.x used :casfilteruser as it's username session key,
-        # so we need to set this here to ensure compatibility with configurations
-        # built around the old client.
-        casfilteruser = vr.user
-        
-        if config[:enable_single_sign_out]
-          session = Rack::Request.new(env).session
-          session['cas'] = {'last_valid_ticket' => current_service_ticket, 'user' => user, 'user_extra' => user_extra}
-          f = store_service_session_lookup(current_service_ticket, session)
-          log.debug("Wrote service session lookup file to #{f.inspect} with session id #{mem.inspect}.")
-        end
-
       end
 
       def work_for_vr_pgt_iou(vr,env)
