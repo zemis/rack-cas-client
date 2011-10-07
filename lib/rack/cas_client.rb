@@ -292,6 +292,7 @@ module Rack
 
       def service_ticket(env)
         request = Rack::Request.new(env)
+        log.debug("------------ @ser_tik: #{@service_ticket.inspect}")
         return @service_ticket if @service_ticket
 
         ticket = request.params['ticket']
