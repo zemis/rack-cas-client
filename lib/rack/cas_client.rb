@@ -243,10 +243,11 @@ module Rack
         status, headers, body = app.call(env)
         
         response = Rack::Response.new(body, status, headers)
-        if new_session
+        # only modify the session when it's a new_session
+        # if new_session
           response.delete_cookie(request.session_options[:key], {})
           response.set_cookie(request.session_options[:key], session)
-        end
+        # end
         response.finish
       end
 
