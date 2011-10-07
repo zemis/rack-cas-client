@@ -423,8 +423,8 @@ module Rack
       module Rails
         def current_user
           return @current_user if @current_user
-          user_data = {:username => session['cas']['user']}
-          user_data.merge!(session['cas']['user_extra'])
+          user_data = {:username => request.env['rack.cas.client.user']}
+          user_data.merge!(request.env['rack.cas.client.user_extra'])
           @current_user = OpenStruct.new(user_data)
         end
       end
