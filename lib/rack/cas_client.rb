@@ -297,12 +297,12 @@ module Rack
 
       def check_service_ticket(env)
         st, last_st = [service_ticket(env), last_service_ticket]
-        log.debug("config : #{config.inspect}")
-        log.debug("st: #{st.inspect}")
-        log.debug("last_st: #{last_st.inspect}")
-        log.debug("env : #{env.inspect}")
+        log.debug("{{{{{{{{{{{{{{{{{{{{config : #{config.inspect}")
+        log.debug("{{{{{{{{{{{{{{{{{{{{st: #{st.inspect}")
+        log.debug("{{{{{{{{{{{{{{{{{{{{last_st: #{last_st.inspect}")
+        log.debug("{{{{{{{{{{{{{{{{{{{{env : #{env.inspect}")
 
-        log.debug("cas session: #{@mem.inspect}")
+        log.debug("{{{{{{{{{{{{{{{{{{{{cas session: #{@mem.inspect}")
         
         r = Rack::Request.new(env)
         key = r.session_options[:key]
