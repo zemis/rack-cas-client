@@ -232,30 +232,26 @@ module Rack
       end
 
       def valid_session(env, request, new_session, current_service_ticket)
+        cas_resp = current_service_ticket.response
+        log.info("Ticket #{current_service_ticket.ticket.inspect} for service #{current_service_ticket.service.inspect} belonging to user #{cas_resp.user.inspect} is VALID.")
+        env['rack.cas.client.user'] = cas_resp.user
+        env['rack.cas.client.user_extra'] = cas_resp.extra_attributes.dup
+      
         status, headers, body = app.call(env)
         
         response = Rack::Response.new(body, status, headers)
-        
         # only modify the session when it's a new_session
         if new_session
-          cas_resp = current_service_ticket.response
-          log.info("Ticket #{current_service_ticket.ticket.inspect} for service #{current_service_ticket.service.inspect} belonging to user #{cas_resp.user.inspect} is VALID.")
-          
           session = request.session
-          session['cas'] = {'last_valid_ticket' => current_service_ticket, 'user' => cas_resp.user, 'user_extra' => cas_resp.extra_attributes.dup }
-          
-          response.delete_cookie(request.session_options[:key], {})
-          response.set_cookie(request.session_options[:key], session)
-
-          # RubyCAS-Client 1.x used :casfilteruser as it's username session key,
-          # so we need to set this here to ensure compatibility with configurations
-          # built around the old client.
-          casfilteruser = cas_resp.user
+          session['cas'] = {'last_valid_ticket' => current_service_ticket, 'filteruser' => cas_resp.user}
 
           if config[:enable_single_sign_out]
             f = store_service_session_lookup(current_service_ticket, session)
             log.debug("Wrote service session lookup file to #{f.inspect} with session id #{session.inspect}.")
           end
+          
+          response.delete_cookie(request.session_options[:key], {})
+          response.set_cookie(request.session_options[:key], session)
         end
         response.finish
       end
