@@ -60,11 +60,11 @@ module Rack
       attr_reader :mem
       
       def call(env)
-        if assets_request?(env)                         return app.call(env)
-        if logout_options = logout_request?(env)        return logout(*logout_options)  
-        if request = sso_request?(env)                  return single_sign_out(request) 
-        if valid_session_options = authenticated?(env)  return valid_session(*valid_session_options)  
-        if xml_request?(env)                            return unauthorized_request     
+        if assets_request?(env);                         return app.call(env);                          end
+        if logout_options = logout_request?(env);        return logout(*logout_options)                 end
+        if request = sso_request?(env);                  return single_sign_out(request)                end
+        if valid_session_options = authenticated?(env);  return valid_session(*valid_session_options)   end
+        if xml_request?(env);                            return unauthorized_request                    end
           
         redirect_to_cas_for_authentication(env)
       end  
