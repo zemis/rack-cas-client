@@ -1,6 +1,7 @@
 require 'logger'
 require 'uri'
 require 'casclient'
+require 'ostruct'
 
 # TODO: remove dependency on activesuppor/core_ext
 # rubycas-client-2.2.1/lib/casclient/responses.rb:40 => String.blank?
@@ -279,16 +280,6 @@ module Rack
 
       def check_service_ticket(env)
         st, last_st = [service_ticket(env), last_service_ticket]
-        log.debug("{{{{{{{{{{{{{{{{{{{{config : #{config.inspect}")
-        log.debug("{{{{{{{{{{{{{{{{{{{{st: #{st.inspect}")
-        log.debug("{{{{{{{{{{{{{{{{{{{{last_st: #{last_st.inspect}")
-        log.debug("{{{{{{{{{{{{{{{{{{{{env : #{env.inspect}")
-
-        log.debug("{{{{{{{{{{{{{{{{{{{{cas session: #{@mem.inspect}")
-        
-        r = Rack::Request.new(env)
-        key = r.session_options[:key]
-        log.debug("test env[#{key}]: #{env[key].inspect}")
      
         return :identical if st && last_st && last_st.ticket == st.ticket && last_st.service == st.service
         return :different if last_st && !config[:authenticate_on_every_request] && client_username_session_key
@@ -419,14 +410,25 @@ module Rack
 
 
     module ClientHelpers
-      
-      module Rails
-        # TODO
-      end
 
       module Sinatra
-        # TODO
+        def current_user
+          return @current_user if @current_user
+          user_data = {:username => request.env['rack.cas.client.user']}
+          user_data.merge!(request.env['rack.cas.client.user_extra'])
+          @current_user = OpenStruct.new(user_data)
+        end
       end
+
+      module Rails
+        def current_user
+          return @current_user if @current_user
+          user_data = {:username => session['cas']['user']}
+          user_data.merge!(session['cas']['user_extra'])
+          @current_user = OpenStruct.new(user_data)
+        end
+      end
+      
     end
     
   end
