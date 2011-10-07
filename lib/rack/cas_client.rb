@@ -288,6 +288,9 @@ module Rack
       def check_service_ticket(env)
         st, last_st = [service_ticket(env), last_service_ticket]
         log.debug("config : #{config.inspect}")
+        log.debug("st: #{st.inspect}")
+        log.debug("last_st: #{last_st.inspect}")
+        log.debug("cas session: #{@mem.inspect}")
         return :identical if st && last_st && last_st.ticket == st.ticket && last_st.service == st.service
         return :different if last_st && !config[:authenticate_on_every_request] && client_username_session_key
       end
