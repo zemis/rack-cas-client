@@ -243,7 +243,7 @@ module Rack
         # only modify the session when it's a new_session
         if new_session
           session = request.session
-          session['cas'] = {'last_valid_ticket' => current_service_ticket, 'filteruser' => cas_resp.user}
+          session['cas'] = {'last_valid_ticket' => current_service_ticket, 'filteruser' => cas_resp.user, 'username_session_key' => cas_resp.user}
 
           if config[:enable_single_sign_out]
             f = store_service_session_lookup(current_service_ticket, session)
@@ -315,10 +315,10 @@ module Rack
       end
 
       def client_username_session_key
-        @mem['user']
+        @mem['username_session_key']
       end
       def client_username_session_key=(value)
-        @mem['user'] = value
+        @mem['username_session_key'] = value
       end
 
       def client_extra_attributes_session_key
