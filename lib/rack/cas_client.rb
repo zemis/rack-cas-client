@@ -60,7 +60,8 @@ module Rack
       attr_reader :mem
       
       def call(env)
-        log.debug(env.inspect)
+        #log.debug(env.inspect)
+        puts env.inspect
         @mem = Rack::Request.new(env).session['cas'] || {}
         return app.call(env)         if assets_request?(env)
         return logout(env)           if logout_request?(env)
