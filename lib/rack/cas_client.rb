@@ -237,14 +237,13 @@ module Rack
       end
 
       def valid_session(env, request, new_session, current_service_ticket, user, user_extra)
-        session = request.session
-        session['cas'] = {'last_valid_ticket' => current_service_ticket, 'user' => user, 'user_extra' => user_extra }
-        
         status, headers, body = app.call(env)
         
         response = Rack::Response.new(body, status, headers)
         # only modify the session when it's a new_session
         if new_session
+          session = request.session
+          session['cas'] = {'last_valid_ticket' => current_service_ticket, 'user' => user, 'user_extra' => user_extra }
           response.delete_cookie(request.session_options[:key], {})
           response.set_cookie(request.session_options[:key], session)
         end
