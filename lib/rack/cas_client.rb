@@ -61,7 +61,6 @@ module Rack
       
       def call(env)
         @mem = Rack::Request.new(env).session['cas'] || {}
-        log.debug("==========mem: #{@mem.inspect}")
         return app.call(env)         if assets_request?(env)
         return logout(env)           if logout_request?(env)
         return single_sign_out(env)  if sso_request?(env)
@@ -292,13 +291,11 @@ module Rack
 
       def service_ticket(env)
         request = Rack::Request.new(env)
-        log.debug("------------ @ser_tik: #{@service_ticket.inspect}")
-        return @service_ticket if @service_ticket
 
         ticket = request.params['ticket']
         return unless ticket
 
-        @service_ticket = if ticket =~ /^PT-/
+        if ticket =~ /^PT-/
           CASClient::ProxyTicket.new(ticket, service_url(env), request.params.delete('renew'))
         else
           CASClient::ServiceTicket.new(ticket, service_url(env), request.params.delete('renew'))
