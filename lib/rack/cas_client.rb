@@ -61,6 +61,7 @@ module Rack
       
       def call(env)
         @mem = Rack::Request.new(env).session['cas'] || {}
+        log.debug("==========mem: #{@mem.inspect}")
         return app.call(env)         if assets_request?(env)
         return logout(env)           if logout_request?(env)
         return single_sign_out(env)  if sso_request?(env)
