@@ -162,7 +162,8 @@ module Rack
       
 
       def authenticated?(env)
-        @mem = Rack::Request.new(env).session['cas'] || {}
+        request = Rack::Request.new(env)
+        @mem = request.session['cas'] || {}
 
         current_service_ticket = nil
         user = nil
