@@ -60,7 +60,6 @@ module Rack
       attr_reader :mem
       
       def call(env)
-#        log.debug("test env[request.session_options[:key]]['cas']: #{env[Rack::Request.new(env).session_options[:key]]['cas'].inspect}")
         @mem = Rack::Request.new(env).session['cas'] || {}
         return app.call(env)         if assets_request?(env)
         return logout(env)           if logout_request?(env)
@@ -292,6 +291,9 @@ module Rack
         log.debug("st: #{st.inspect}")
         log.debug("last_st: #{last_st.inspect}")
         log.debug("cas session: #{@mem.inspect}")
+        r = Rack::Request.new(env)
+        key = r.session_options[:key]
+        log.debug("test env[request.session_options[:key]]: #{env[key].inspect}")
         return :identical if st && last_st && last_st.ticket == st.ticket && last_st.service == st.service
         return :different if last_st && !config[:authenticate_on_every_request] && client_username_session_key
       end
