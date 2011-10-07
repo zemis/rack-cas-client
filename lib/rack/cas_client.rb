@@ -174,12 +174,15 @@ module Rack
           @current_service_ticket = last_service_ticket
           
         else
-          log.debug("set current_service_ticket to service_ticket")
+          log.debug("New session!")
           @current_service_ticket = service_ticket(env)
         end
 
         if @current_service_ticket
-          client.validate_service_ticket(@current_service_ticket) unless @current_service_ticket.has_been_validated?
+          unless @current_service_ticket.has_been_validated?
+            log.debug("VALIDATING SERVICE TICKET")
+            client.validate_service_ticket(@current_service_ticket)
+          end
           vr = @current_service_ticket.response
 
           if @current_service_ticket.is_valid?
