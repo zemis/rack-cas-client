@@ -196,10 +196,11 @@ module Rack
           if current_service_ticket.is_valid?
             # Store the ticket in the session to avoid re-validating the same service ticket with the CAS server.
             last_service_ticket = current_service_ticket
+            user = vr.user.dup
+            user_extra = vr.extra_attributes.dup
 
-            user, user_extra = work_for_new_session(env,current_service_ticket,vr) if new_session
+            work_for_new_session(env,current_service_ticket,vr) if new_session
             work_for_vr_pgt_iou(vr,env) if vr.pgt_iou
-
 
             return [env, request, new_session, current_service_ticket, user, user_extra]
           else
@@ -265,12 +266,11 @@ module Rack
         
         if config[:enable_single_sign_out]
           session = Rack::Request.new(env).session
-          session['cas'] = {'last_valid_ticket' => current_service_ticket}
+          session['cas'] = {'last_valid_ticket' => current_service_ticket, 'user' => user, 'user_extra' => user_extra}
           f = store_service_session_lookup(current_service_ticket, session)
           log.debug("Wrote service session lookup file to #{f.inspect} with session id #{mem.inspect}.")
         end
 
-        [user, user_extra]
       end
 
       def work_for_vr_pgt_iou(vr,env)
