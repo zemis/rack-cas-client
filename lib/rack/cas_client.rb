@@ -63,7 +63,7 @@ module Rack
         return app.call(env)            if assets_request?(env)
         return logout(*logout_options)  if logout_options = logout_request?(env)
         return single_sign_out(request) if request = sso_request?(env)
-        return valid_session(*valid_session_opitons)  if valid_session_opitons = authenticated?(env)
+        return valid_session(*valid_session_options)  if valid_session_options = authenticated?(env)
         return unauthorized_request     if xml_request?(env)
           
         redirect_to_cas_for_authentication(env)
