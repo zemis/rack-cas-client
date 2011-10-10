@@ -237,6 +237,8 @@ module Rack
         log.info("Ticket #{current_service_ticket.ticket.inspect} for service #{current_service_ticket.service.inspect} belonging to user #{cas_resp.user.inspect} is VALID.")
         env['rack.cas.client.user'] = cas_resp.user
         env['rack.cas.client.user_extra'] = cas_resp.extra_attributes.dup
+
+        # TODO: remove ticket params from env
       
         status, headers, body = app.call(env)
         
