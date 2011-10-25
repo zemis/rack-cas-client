@@ -417,7 +417,8 @@ module Rack
         def current_user
           return @current_user if @current_user
           user_data = {:username => request.env['rack.cas.client.user']}
-          user_data.merge!(request.env['rack.cas.client.user_extra'])
+          extra_attrs = request.env['rack.cas.client.user_extra'] || {}
+          user_data.merge!(extra_attrs)
           @current_user = OpenStruct.new(user_data)
         end
       end
@@ -426,7 +427,8 @@ module Rack
         def current_user
           return @current_user if @current_user
           user_data = {:username => request.env['rack.cas.client.user']}
-          user_data.merge!(request.env['rack.cas.client.user_extra'])
+          extra_attrs = request.env['rack.cas.client.user_extra'] || {}
+          user_data.merge!(extra_attrs)
           @current_user = OpenStruct.new(user_data)
         end
       end
