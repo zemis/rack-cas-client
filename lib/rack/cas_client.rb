@@ -193,6 +193,7 @@ module Rack
               client.validate_service_ticket(current_service_ticket)
             rescue Exception => ex
               log.error("call to validate service ticket failed: #{ex.inspect}")
+              return false
             end
           end
           vr = current_service_ticket.response
