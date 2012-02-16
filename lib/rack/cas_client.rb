@@ -107,7 +107,6 @@ module Rack
       def logout_request?(env)
         request = Rack::Request.new(env)
         if request.path == '/logout' && request.delete?
-          #        st = last_service_ticket
           st = request.session['cas']['last_valid_ticket']
           [st, request]
         end
@@ -190,7 +189,11 @@ module Rack
         if current_service_ticket
           unless current_service_ticket.has_been_validated?
             log.debug("VALIDATING SERVICE TICKET")
-            client.validate_service_ticket(current_service_ticket)
+            begin
+              client.validate_service_ticket(current_service_ticket)
+            rescue RuntimeError => ex
+              log.error("call to validate service ticket failed: #{ex.inspect}")
+            end
           end
           vr = current_service_ticket.response
 
