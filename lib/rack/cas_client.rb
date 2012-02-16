@@ -191,7 +191,7 @@ module Rack
             log.debug("VALIDATING SERVICE TICKET")
             begin
               client.validate_service_ticket(current_service_ticket)
-            rescue RuntimeError => ex
+            rescue Exception => ex
               log.error("call to validate service ticket failed: #{ex.inspect}")
             end
           end
