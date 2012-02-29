@@ -62,16 +62,24 @@ module Rack
 
       def call(env)
         if assets_request?(env);                         return app.call(env);                          end
-        if exception?(env);                              return app.call(env);                          end
         if logout_options = logout_request?(env);        return logout(*logout_options)                 end
         if request = sso_request?(env);                  return single_sign_out(request)                end
-        if valid_session_options = authenticated?(env);  return valid_session(*valid_session_options)   end
+
+        if valid_session_options = authenticated?(env);
+          return valid_session(*valid_session_options)
+        else
+          if exception?(env)
+            return app.call(env)
+          end
+        end
+
         if xml_request?(env);                            return unauthorized_request                    end
 
         redirect_to_cas_for_authentication(env)
       end
 
       protected
+
       def client
         @client ||= CASClient::Client.new(config)
       end
