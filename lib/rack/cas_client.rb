@@ -77,7 +77,7 @@ module Rack
       end
 
       def exception?(env)
-        path = env['PATH_INFO']
+        path = env['REQUEST_URI']
 
         config[:allow_unauthenticated_urls].to_a.each do |exception|
           if exception.is_a? Regexp
