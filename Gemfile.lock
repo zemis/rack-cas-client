@@ -32,4 +32,4 @@ DEPENDENCIES
   jeweler (~> 1.6.4)
   rcov
   rspec (~> 2.3.0)
-  rubycas-client (~> 2.2.1)
+  rubycas-client (>= 2.2.1)
