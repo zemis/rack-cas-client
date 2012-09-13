@@ -196,7 +196,7 @@ module Rack
               return false
             end
           end
-          vr = current_service_ticket.response
+          vr = current_service_ticket.respond_to?(:response) ? current_service_ticket.response : current_service_ticket
 
           if current_service_ticket.is_valid?
             work_for_vr_pgt_iou(vr,env) if vr.pgt_iou
@@ -237,10 +237,16 @@ module Rack
       end
 
       def valid_session(env, request, new_session, current_service_ticket)
-        cas_resp = current_service_ticket.response
-        log.info("Ticket #{current_service_ticket.ticket.inspect} for service #{current_service_ticket.service.inspect} belonging to user #{cas_resp.user.inspect} is VALID.")
-        env['rack.cas.client.user'] = cas_resp.user
-        env['rack.cas.client.user_extra'] = cas_resp.extra_attributes.dup
+        if current_service_ticket.respond_to?(:response)
+          cas_user = current_service_ticket.response.user
+          cas_extra_attributes = current_service_ticket.response.extra_attributes
+        else
+          cas_user = current_service_ticket.user
+          cas_extra_attributes = current_service_ticket.extra_attributes
+        end
+        log.info("Ticket #{current_service_ticket.ticket.inspect} for service #{current_service_ticket.service.inspect} belonging to user #{cas_user.inspect} is VALID.")
+        env['rack.cas.client.user'] = cas_user
+        env['rack.cas.client.user_extra'] = cas_extra_attributes.dup
 
         # TODO: remove ticket params from env
       
@@ -250,7 +256,7 @@ module Rack
         # only modify the session when it's a new_session
         if new_session
           session = request.session
-          session['cas'] = {'last_valid_ticket' => current_service_ticket, 'filteruser' => cas_resp.user, 'username_session_key' => cas_resp.user}
+          session['cas'] = {'last_valid_ticket' => current_service_ticket, 'filteruser' => cas_user, 'username_session_key' => cas_user}
 
           if config[:enable_single_sign_out]
             f = store_service_session_lookup(current_service_ticket, session)
