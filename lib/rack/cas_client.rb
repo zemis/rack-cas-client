@@ -250,7 +250,13 @@ module Rack
         # only modify the session when it's a new_session
         if new_session
           session = request.session
-          session['cas'] = {'last_valid_ticket' => current_service_ticket, 'filteruser' => cas_resp.user, 'username_session_key' => cas_resp.user}
+          session['cas'] = {
+            'user' => request.env['rack.cas.client.user'],
+            'extra_attributes' => request.env['rack.cas.client.user_extra'] || {},
+            'last_valid_ticket' => current_service_ticket, 
+            'filteruser' => cas_resp.user, 
+            'username_session_key' => cas_resp.user
+          }
 
           if config[:enable_single_sign_out]
             f = store_service_session_lookup(current_service_ticket, session)
@@ -412,31 +418,6 @@ module Rack
         return url
       end
      
-    end
-
-
-    module ClientHelpers
-
-      module Sinatra
-        def current_user
-          return @current_user if @current_user
-          user_data = {:username => request.env['rack.cas.client.user']}
-          extra_attrs = request.env['rack.cas.client.user_extra'] || {}
-          user_data.merge!(extra_attrs)
-          @current_user = OpenStruct.new(user_data)
-        end
-      end
-
-      module Rails
-        def current_user
-          return @current_user if @current_user
-          user_data = {:username => request.env['rack.cas.client.user']}
-          extra_attrs = request.env['rack.cas.client.user_extra'] || {}
-          user_data.merge!(extra_attrs)
-          @current_user = OpenStruct.new(user_data)
-        end
-      end
-      
     end
     
   end
