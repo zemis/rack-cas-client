@@ -401,7 +401,9 @@ module Rack
           validation_retry = 0
         end
         previous_redirect_to_cas = Time.now
-        
+
+        redirect_url += '&from=' + URI.encode_www_form_component(env['ORIGINAL_FULLPATH'])
+
         request  = Rack::Request.new(env)
         response = Rack::Response.new(["redirect to #{redirect_url}"],302, {'Location' => redirect_url, 'Content-Type' => 'text/plain'})
 
